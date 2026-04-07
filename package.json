@@ -1,11 +1,7 @@
 {
-  "name": "basic-proxy",
+  "name": "vercel-proxy",
   "version": "1.0.0",
-  "description": "A confined Express web proxy prototype",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "description": "A confined Express web proxy prototype for Vercel",
   "dependencies": {
     "express": "^4.19.2",
     "cheerio": "^1.0.0-rc.12"
