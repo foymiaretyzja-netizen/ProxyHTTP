@@ -2,7 +2,6 @@ const express = require('express');
 const cheerio = require('cheerio');
 const app = express();
 
-// 1. WE STORE THE HTML UI HERE NOW SO VERCEL CAN'T BYPASS IT
 const uiHTML = `
 <!DOCTYPE html>
 <html lang="en">
@@ -10,21 +9,25 @@ const uiHTML = `
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow">
-    <title>My Simple Proxy</title>
+    <title>Browser Prototype</title>
     <style>
-        body { font-family: sans-serif; background-color: #f4f4f9; display: flex; flex-direction: column; align-items: center; margin-top: 15%; }
-        input[type="url"] { width: 300px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
-        button { padding: 10px 20px; border-radius: 5px; border: none; background-color: #007bff; color: white; cursor: pointer; }
+        body { font-family: sans-serif; background-color: #1a1a1a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .container { text-align: center; border: 1px solid #333; padding: 40px; border-radius: 12px; background: #222; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input[type="url"] { width: 350px; padding: 12px; border-radius: 6px; border: 1px solid #444; background: #333; color: white; margin-bottom: 20px; }
+        button { padding: 12px 24px; border-radius: 6px; border: none; background-color: #007bff; color: white; cursor: pointer; font-weight: bold; }
         button:hover { background-color: #0056b3; }
+        p { color: #888; font-size: 0.9em; }
     </style>
 </head>
 <body>
-    <h1>Prototype Proxy</h1>
-    <p>Enter a URL to browse safely</p>
-    <form id="proxyForm">
-        <input type="url" id="targetUrl" placeholder="https://example.com" required>
-        <button type="submit">Go</button>
-    </form>
+    <div class="container">
+        <h1>Netizen Proxy</h1>
+        <form id="proxyForm">
+            <input type="url" id="targetUrl" placeholder="https://example.com" required><br>
+            <button type="submit">Launch Browser</button>
+        </form>
+        <p>Press <strong>Shift + Q</strong> while browsing to open settings.</p>
+    </div>
     <script>
         document.getElementById('proxyForm').addEventListener('submit', function(event) {
             event.preventDefault(); 
@@ -38,80 +41,70 @@ const uiHTML = `
 </html>
 `;
 
-// 2. USE '*' TO CATCH EVERY SINGLE ROUTE VERCEL TRIES TO THROW AT IT
 app.all('*', async (req, res) => {
-    
     const userPass = req.query.pw;
     const correctPass = process.env.PROXY_PASSWORD;
 
-    // 3. PASSWORD CHECK
     if (userPass !== correctPass) {
-        return res.status(401).send("<h1>Access Denied</h1><p>Please add ?pw=YOUR_PASSWORD to the URL.</p>");
+        return res.status(401).send("<h1>Access Denied</h1>");
     }
 
     const targetUrl = req.query.target;
+    if (!targetUrl) return res.send(uiHTML);
 
-    // 4. LOAD THE HTML UI IF NO TARGET IS TYPED
-    if (!targetUrl) {
-        return res.send(uiHTML);
-    }
-
-    // 5. THE HIGH-RISK BLOCKLIST
-    // Add any sites here you want to prevent the proxy from ever loading
-    const blocklist = ['netflix.com', 'hulu.com', 'bankofamerica.com', 'chase.com', 'wellsfargo.com', 'youtube.com'];
+    const blocklist = ['netflix.com', 'hulu.com', 'chase.com', 'bankofamerica.com'];
     if (targetUrl && blocklist.some(domain => targetUrl.toLowerCase().includes(domain))) {
-        return res.status(403).send(`
-            <div style="font-family: sans-serif; text-align: center; margin-top: 10%;">
-                <h1 style="color: red;">Safety Protocol Active</h1>
-                <p>This domain is blocked to protect your Vercel account from being flagged.</p>
-                <a href="/?pw=${userPass}">Go Back</a>
-            </div>
-        `);
+        return res.status(403).send("<h1>Domain Blocked for Safety</h1>");
     }
 
-    // 6. RUN THE PROXY ENGINE
     try {
-        const fetchUrl = new URL(targetUrl);
-        for (let key in req.query) {
-            if (key !== 'target' && key !== 'pw') {
-                fetchUrl.searchParams.append(key, req.query[key]);
-            }
-        }
-
-        const response = await fetch(fetchUrl.toString(), {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)' }
+        const response = await fetch(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
         });
         
-        const html = await response.text();
+        let html = await response.text();
         const $ = cheerio.load(html);
         const base = new URL(targetUrl);
 
-        $('a').each((i, link) => {
-            let href = $(link).attr('href');
+        // REWRITE LINKS & FORMS
+        $('a').each((i, el) => {
+            let href = $(el).attr('href');
             if (href && !href.startsWith('javascript:')) {
                 try {
-                    let absoluteUrl = new URL(href, base.href).href;
-                    $(link).attr('href', `/?pw=${userPass}&target=` + encodeURIComponent(absoluteUrl));
-                } catch (e) {}
+                    $(el).attr('href', `/?pw=${userPass}&target=` + encodeURIComponent(new URL(href, base).href));
+                } catch(e){}
             }
         });
 
-        $('form').each((i, form) => {
-            let action = $(form).attr('action');
-            if (action) {
-                try {
-                    let absoluteAction = new URL(action, base.href).href;
-                    $(form).attr('action', '/');
-                    $(form).append(`<input type="hidden" name="target" value="${absoluteAction}">`);
-                    $(form).append(`<input type="hidden" name="pw" value="${userPass}">`);
-                } catch (e) {}
-            }
-        });
-
+        // INJECT BROWSER UI (The Panel)
+        const injectScripts = `
+            <style>
+                #proxy-ui { position: fixed; top: 20px; right: 20px; background: #222; color: white; padding: 15px; border-radius: 8px; z-index: 999999; display: none; font-family: sans-serif; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border: 1px solid #444; }
+                #proxy-ui button { margin: 5px; padding: 8px; cursor: pointer; background: #444; color: white; border: none; border-radius: 4px; }
+                #proxy-ui button:hover { background: #666; }
+                .dark-mode-active { filter: invert(1) hue-rotate(180deg); background-color: #fff; }
+            </style>
+            <div id="proxy-ui">
+                <strong style="display:block; margin-bottom:10px;">Browser Controls</strong>
+                <button onclick="window.location.href='/?pw=${userPass}'">Home</button>
+                <button onclick="document.documentElement.classList.toggle('dark-mode-active')">Toggle Dark</button>
+                <button onclick="document.getElementById('proxy-ui').style.display='none'">Close (Shift+Q)</button>
+            </div>
+            <script>
+                document.addEventListener('keydown', function(e) {
+                    if (e.shiftKey && e.key.toLowerCase() === 'q') {
+                        const ui = document.getElementById('proxy-url') || document.getElementById('proxy-ui');
+                        ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+                    }
+                });
+            </script>
+        `;
+        
+        $('body').append(injectScripts);
         res.send($.html());
         
     } catch (error) {
-        res.status(500).send('Error fetching the website. Make sure it includes https://');
+        res.status(500).send('Error loading page.');
     }
 });
 
