@@ -1,28 +1,31 @@
-const http = require('http');
-const httpProxy = require('http-proxy');
+const express = require('express');
+const path = require('path');
+const app = express();
 
-// Create a proxy server instance
-const proxy = httpProxy.createProxyServer({});
+app.get('/', async (req, res) => {
+    const targetUrl = req.query.target;
 
-// Create the main server
-const server = http.createServer((req, res) => {
-  // Extract the target URL from the query string
-  // Example: your-app.onrender.com/?target=https://google.com
-  const urlParams = new URL(req.url, `http://${req.headers.host}`);
-  const target = urlParams.searchParams.get('target');
+    // 1. If there is no target, send the index.html page!
+    if (!targetUrl) {
+        return res.sendFile(path.join(__dirname, 'index.html'));
+    }
 
-  if (target) {
-    proxy.web(req, res, { target: target, changeOrigin: true }, (e) => {
-      res.writeHead(500);
-      res.end("Proxy Error: Check if the URL is valid.");
-    });
-  } else {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end("Proxy is active. Usage: /?target=https://example.com");
-  }
+    // 2. If there is a target, run the proxy logic
+    try {
+        const response = await fetch(targetUrl);
+        let html = await response.text();
+
+        // 3. Find and Replace links to keep the user inside the proxy
+        const origin = new URL(targetUrl).origin;
+        html = html.replace(/href="(\/[^"]+)"/g, `href="/?target=${origin}$1"`);
+        html = html.replace(/src="(\/[^"]+)"/g, `src="/?target=${origin}$1"`);
+
+        res.send(html);
+        
+    } catch (error) {
+        res.status(500).send('Error fetching the website. Make sure it includes https://');
+    }
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Proxy running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Prototype ready on port ${PORT}!`));
