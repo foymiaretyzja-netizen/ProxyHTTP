@@ -2,7 +2,6 @@ const express = require('express');
 const cheerio = require('cheerio');
 const app = express();
 
-// Helper to encode/decode URLs so filters can't read them in the address bar
 const encode = (str) => Buffer.from(str).toString('base64');
 const decode = (str) => {
     try { return Buffer.from(str, 'base64').toString('utf8'); }
@@ -38,9 +37,7 @@ const uiHTML = `
             e.preventDefault();
             const urlParams = new URLSearchParams(window.location.search);
             const target = document.getElementById('u').value;
-            // WE ENCODE THE URL TO HIDE IT FROM THE FILTER
-            const encodedTarget = btoa(target);
-            location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + encodedTarget;
+            location.href = '/?pw=' + (urlParams.get('pw')||'') + '&target=' + btoa(target);
         });
     </script>
 </body>
@@ -53,8 +50,6 @@ app.all('*', async (req, res) => {
 
     let target = req.query.target;
     if (!target) return res.send(uiHTML);
-    
-    // Decode the URL (it's now coming in as Base64)
     target = decode(target);
 
     try {
@@ -64,7 +59,6 @@ app.all('*', async (req, res) => {
 
         const contentType = response.headers.get('content-type') || '';
 
-        // PIPING NON-HTML ASSETS (CSS/Images/JS)
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
             res.setHeader('Content-Type', contentType);
@@ -72,30 +66,27 @@ app.all('*', async (req, res) => {
             return res.send(Buffer.from(buffer));
         }
 
-        // PROCESSING HTML
         let html = await response.text();
         const $ = cheerio.load(html);
         const origin = new URL(target).origin;
 
-        // 1. CLOAKING: Change Title and Favicon
+        // CLOAKING
         $('title').text('Google Drive');
         $('head').append('<link rel="icon" href="https://www.google.com/favicon.ico" type="image/x-icon">');
-
-        // 2. CSS & IMAGE FIXING (Aggressive)
         $('head').prepend(`<base href="${origin}/">`);
 
+        // REWRITING ATTRIBUTES
         const rewriteAttr = (tag, attr) => {
             $(tag).each((i, el) => {
                 let val = $(el).attr(attr);
                 if (val && !val.startsWith('data:') && !val.startsWith('javascript:')) {
                     try {
                         const absolute = new URL(val, target).href;
-                        // For links, use the new Base64 encoding
-                        if (tag === 'a' || tag === 'form' || tag === 'iframe') {
-                            $(el).attr(attr, `/?pw=${pw}&target=${encode(absolute)}`);
-                        } else {
-                            // For CSS/Images/Scripts, pipe them normally
-                            $(el).attr(attr, `/?pw=${pw}&target=${encode(absolute)}`);
+                        $(el).attr(attr, `/?pw=${pw}&target=${encode(absolute)}`);
+                        
+                        // NEW: FORCING SAME-TAB NAVIGATION
+                        if (tag === 'a') {
+                            $(el).attr('target', '_self');
                         }
                     } catch(e) {}
                 }
@@ -107,27 +98,42 @@ app.all('*', async (req, res) => {
             rewriteAttr(t, a);
         });
 
-        // 3. STEALTH UI
-        const panel = `
+        // STEALTH UI + JS INTERCEPTORS
+        const inject = `
             <div id="base-ui" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#fff;padding:10px 20px;border-radius:50px;z-index:9999999;display:none;border:1px solid #333;font-family:sans-serif;">
                 <b>Base</b> | <button onclick="location.href='/?pw=${pw}'">Home</button>
             </div>
             <script>
+                // 1. Keyboard Toggle
                 document.addEventListener('keydown', e => {
                     if(e.shiftKey && e.key.toLowerCase() === 'q') {
                         const ui = document.getElementById('base-ui');
                         ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
                     }
                 });
+
+                // 2. JS Window.open Interceptor (Prevents scripts from opening new tabs)
+                window.open = function(url) {
+                    location.href = url;
+                    return null;
+                };
+
+                // 3. Dynamic Link Catcher (Catches links added after the page loads)
+                document.addEventListener('click', e => {
+                    const link = e.target.closest('a');
+                    if (link && link.target === '_blank') {
+                        link.target = '_self';
+                    }
+                });
             </script>
         `;
 
-        $('body').append(panel);
+        $('body').append(inject);
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.send($.html());
 
     } catch (e) {
-        res.status(500).send("Error loading site.");
+        res.status(500).send("Error.");
     }
 });
 
