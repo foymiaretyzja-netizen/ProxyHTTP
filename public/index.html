@@ -33,7 +33,7 @@
 <body>
 
     <h1>Prototype Proxy</h1>
-    <p>Enter a URL to browse safely (text/basic sites only)</p>
+    <p>Enter a URL to browse safely</p>
 
     <form id="proxyForm">
         <input type="url" id="targetUrl" placeholder="https://example.com" required>
@@ -41,12 +41,17 @@
     </form>
 
     <script>
-        // This script intercepts the form submission and builds the proxy URL
+        // Intercept form, grab password from current URL, and build the proxy URL
         document.getElementById('proxyForm').addEventListener('submit', function(event) {
-            event.preventDefault(); // Stop the page from refreshing
+            event.preventDefault(); 
             const url = document.getElementById('targetUrl').value;
-            // Redirect to our Express server's target route
-            window.location.href = '/?target=' + encodeURIComponent(url);
+            
+            // Get the password from the address bar so we don't get locked out
+            const urlParams = new URLSearchParams(window.location.search);
+            const pw = urlParams.get('pw') || '';
+            
+            // Redirect to Vercel backend
+            window.location.href = '/?pw=' + encodeURIComponent(pw) + '&target=' + encodeURIComponent(url);
         });
     </script>
 
