@@ -1,12 +1,31 @@
-{
-  "name": "basic-proxy",
-  "version": "1.0.0",
-  "description": "A simple Node.js web proxy",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "http-proxy": "^1.18.1"
-  }
-}
+const express = require('express');
+const app = express();
+
+app.get('/', async (req, res) => {
+    const targetUrl = req.query.target;
+
+    if (!targetUrl) {
+        return res.send('Prototype Proxy. Usage: /?target=https://example.com');
+    }
+
+    try {
+        // 1. Fetch the target website
+        const response = await fetch(targetUrl);
+        let html = await response.text();
+
+        // 2 & 3. The "Find and Replace" (Regex)
+        // This looks for href="/something" and rewrites it to your proxy
+        html = html.replace(/href="(\/[^"]+)"/g, `href="/?target=${new URL(targetUrl).origin}$1"`);
+        
+        // Rewrite src attribute for basic images/scripts
+        html = html.replace(/src="(\/[^"]+)"/g, `src="/?target=${new URL(targetUrl).origin}$1"`);
+
+        // 4. Send the modified HTML to your browser
+        res.send(html);
+        
+    } catch (error) {
+        res.send('Error fetching the website.');
+    }
+});
+
+app.listen(3000, () => console.log('Prototype ready!'));
