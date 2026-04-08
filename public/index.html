@@ -67,7 +67,7 @@
 
     <div class="topbar">
         <button class="icon-btn" id="newTabBtn" title="New Tab">+</button>
-        <button class="icon-btn" title="Fullscreen">⛶</button>
+        <button class="icon-btn" id="fullScreenBtn" title="Fullscreen">⛶</button>
         <input type="text" class="omnibox" id="urlInput" placeholder="Search or type URL..." autocomplete="off">
         <button class="icon-btn" id="toggleSidebarBtn" title="Menu">⋮</button>
     </div>
@@ -114,7 +114,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         const AUTH_PW = urlParams.get('pw') || '';
 
-        // --- 2. THE NATIVE BASE HOME PAGE (Fixes Inception Bug) ---
+        // --- 2. THE NATIVE BASE HOME PAGE ---
         const homeHTML = `
             <!DOCTYPE html>
             <html>
@@ -165,12 +165,12 @@
             const fullUrl = `/?pw=${AUTH_PW}&target=${encoded}`;
             const domain = extractDomain(fullUrl);
             
-            const activeIframe = document.getElementById(\`iframe_\${state.activeTabId}\`);
-            activeIframe.removeAttribute('srcdoc'); // Clear the native homepage
+            const activeIframe = document.getElementById(`iframe_${state.activeTabId}`);
+            activeIframe.removeAttribute('srcdoc'); 
             activeIframe.src = fullUrl;
             
             state.tabs[state.activeTabId].domain = domain;
-            document.querySelector(\`#ui_\${state.activeTabId} .tab-title\`).innerText = domain;
+            document.querySelector(`#ui_${state.activeTabId} .tab-title`).innerText = domain;
             elements.input.value = query;
             
             state.history.push({ domain: domain, query: query, time: new Date().toLocaleTimeString() });
@@ -191,7 +191,7 @@
             // Iframe
             const iframe = document.createElement('iframe');
             iframe.className = 'browser-frame'; iframe.id = `iframe_${tabId}`;
-            iframe.srcdoc = homeHTML; // Inject the native homepage!
+            iframe.srcdoc = homeHTML; 
             elements.container.appendChild(iframe);
 
             switchTab(tabId);
@@ -209,7 +209,7 @@
 
             const iframe = document.getElementById(`iframe_${tabId}`);
             if (iframe.hasAttribute('srcdoc')) {
-                elements.input.value = ''; // It's on the home page
+                elements.input.value = ''; 
             } else {
                 try { elements.input.value = atob(decodeURIComponent(new URLSearchParams(new URL(iframe.src).search).get('target'))); } 
                 catch(e) { elements.input.value = ''; }
@@ -227,12 +227,21 @@
 
         document.getElementById('newTabBtn').addEventListener('click', () => createTab());
 
+        // Fullscreen Toggle Logic
+        document.getElementById('fullScreenBtn').addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => console.error(err));
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        });
+
         // --- 6. EVENT LISTENERS ---
         elements.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') executeSearch(e.target.value); });
 
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'base_search') {
-                executeSearch(e.data.query); // Route search from native homepage
+                executeSearch(e.data.query); 
             }
             if (e.data && e.data.type === 'base_error') {
                 const domain = state.tabs[state.activeTabId]?.domain || "Unknown";
