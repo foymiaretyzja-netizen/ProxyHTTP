@@ -126,6 +126,8 @@
                     form { width: 100%; max-width: 600px; padding: 0 20px; box-sizing: border-box; }
                     input { width: 100%; padding: 16px 24px; border-radius: 30px; border: 1px solid #333; background: #111; color: #fff; font-size: 16px; outline: none; box-sizing: border-box; transition: 0.2s; }
                     input:focus { border-color: #555; background: #1a1a1a; }
+                    .media-btn { margin-top: 25px; padding: 10px 24px; background: #111; border: 1px solid #333; color: #aaa; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+                    .media-btn:hover { background: #1a1a1a; color: #fff; border-color: #555; }
                 </style>
             </head>
             <body>
@@ -133,10 +135,14 @@
                 <form id="hForm">
                     <input type="text" id="s" placeholder="Search the web or enter URL..." autocomplete="off" autofocus>
                 </form>
+                <button class="media-btn" id="mBtn">🎬 BaseMedia</button>
                 <script>
                     document.getElementById('hForm').addEventListener('submit', function(e) {
                         e.preventDefault();
                         window.parent.postMessage({ type: 'base_search', query: document.getElementById('s').value }, '*');
+                    });
+                    document.getElementById('mBtn').addEventListener('click', function() {
+                        window.parent.postMessage({ type: 'base_internal', target: 'media.html' }, '*');
                     });
                 <\/script>
             </body>
@@ -211,6 +217,8 @@
             const iframe = document.getElementById(`iframe_${tabId}`);
             if (iframe.hasAttribute('srcdoc')) {
                 elements.input.value = ''; 
+            } else if (iframe.src.includes('media.html')) {
+                elements.input.value = 'base://media';
             } else {
                 try { elements.input.value = atob(decodeURIComponent(new URLSearchParams(new URL(iframe.src).search).get('target'))); } 
                 catch(e) { elements.input.value = ''; }
@@ -243,6 +251,19 @@
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'base_search') {
                 executeSearch(e.data.query); 
+            }
+            if (e.data && e.data.type === 'base_internal') {
+                // Route for internal GitHub repo HTML files (like BaseMedia)
+                const activeIframe = document.getElementById(`iframe_${state.activeTabId}`);
+                activeIframe.removeAttribute('srcdoc');
+                activeIframe.src = e.data.target; 
+                
+                const domain = "BaseMedia";
+                state.tabs[state.activeTabId].domain = domain;
+                document.querySelector(`#ui_${state.activeTabId} .tab-title`).innerText = domain;
+                elements.input.value = `base://${e.data.target.split('.')[0]}`; 
+                
+                state.history.push({ domain: domain, query: `Opened Internal App: ${e.data.target}`, time: new Date().toLocaleTimeString() });
             }
             if (e.data && e.data.type === 'base_error') {
                 const domain = state.tabs[state.activeTabId]?.domain || "Unknown";
