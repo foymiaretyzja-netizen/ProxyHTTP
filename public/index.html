@@ -13,7 +13,16 @@
         .icon-btn { background: none; border: none; color: #aaa; font-size: 20px; cursor: pointer; margin: 0 5px; transition: 0.2s; }
         .icon-btn:hover { color: #fff; }
 
-        .browser-view { flex-grow: 1; border: none; width: 100%; background: #fff; }
+        /* --- TAB SYSTEM STYLES --- */
+        .tab-bar { display: flex; background: #1a1a1a; padding: 5px 10px 0 10px; border-bottom: 1px solid #333; overflow-x: auto; }
+        .tab { display: flex; align-items: center; background: #222; margin-right: 5px; padding: 8px 15px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 13px; color: #aaa; border: 1px solid #333; border-bottom: none; min-width: 120px; max-width: 200px; justify-content: space-between; }
+        .tab.active { background: #fff; color: #000; font-weight: bold; }
+        .tab-close { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; margin-left: 10px; opacity: 0.7; }
+        .tab-close:hover { opacity: 1; }
+        
+        .browser-container { flex-grow: 1; position: relative; background: #fff; }
+        .browser-frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; display: none; }
+        .browser-frame.active { display: block; }
 
         /* --- SIDEBAR STYLES --- */
         #sidebar {
@@ -51,13 +60,15 @@
 <body>
 
     <div class="topbar">
-        <button class="icon-btn" title="New Tab">+</button>
+        <button class="icon-btn" id="newTabBtn" title="New Tab">+</button>
         <button class="icon-btn" title="Fullscreen">⛶</button>
         <input type="text" class="omnibox" id="urlInput" placeholder="Search the web or enter a URL..." autocomplete="off">
         <button class="icon-btn" id="toggleSidebarBtn" title="Menu">⋮</button>
     </div>
 
-    <iframe id="browserFrame" class="browser-view" src="/?pw=YOUR_PASSWORD&target="></iframe>
+    <div class="tab-bar" id="tabBar"></div>
+
+    <div class="browser-container" id="browserContainer"></div>
 
     <div id="sidebar">
         <div class="sidebar-header">
@@ -84,91 +95,151 @@
 
         <div class="sidebar-content error-panel" id="errorPanel">
             <button class="filter-btn" id="backToMenu2" style="margin-bottom: 15px; width: 100%;">← Back to Menu</button>
-            
             <div class="filter-tabs">
                 <button class="filter-btn active" id="filterCurrent">Current Tab</button>
                 <button class="filter-btn" id="filterAll">All Tabs</button>
             </div>
-            
             <div id="errorList"></div>
         </div>
     </div>
 
     <script>
-        // --- DATA STATE ---
+        // --- 1. DYNAMIC AUTHENTICATION ---
+        // Grab the actual password from the main window's URL so we don't lock ourselves out
+        const urlParams = new URLSearchParams(window.location.search);
+        const AUTH_PW = urlParams.get('pw') || '';
+
+        // --- 2. DATA STATE ---
         const state = {
             history: [],
-            errors: {}, // Format: { "tiktok.com": ["error 1", "error 2"] }
-            currentDomain: "Unknown Site"
+            errors: {}, 
+            tabs: {}, // Store info for each tab ID
+            activeTabId: null,
+            tabCounter: 0
         };
 
         const elements = {
             sidebar: document.getElementById('sidebar'),
-            frame: document.getElementById('browserFrame'),
             input: document.getElementById('urlInput'),
-            title: document.getElementById('sidebarTitle')
+            tabBar: document.getElementById('tabBar'),
+            container: document.getElementById('browserContainer')
         };
 
-        // --- HELPER: GET DOMAIN ---
         const extractDomain = (urlStr) => {
             try {
-                // Decode proxy URL to get real target
-                const urlParams = new URLSearchParams(new URL(urlStr).search);
-                const targetB64 = urlParams.get('target');
+                const searchParams = new URLSearchParams(new URL(urlStr).search);
+                const targetB64 = searchParams.get('target');
                 if (targetB64) {
                     const decoded = atob(decodeURIComponent(targetB64));
                     return new URL(decoded).hostname;
                 }
-                return "Base Search / Home";
+                return "Base Home";
             } catch (e) {
                 return "Unknown Site";
             }
         };
 
-        // --- CORE FUNCTIONALITY ---
-        // 1. Navigation & Tracking
+        // --- 3. TAB SYSTEM LOGIC ---
+        const createTab = (targetUrl = '') => {
+            const tabId = 'tab_' + (++state.tabCounter);
+            const encoded = targetUrl ? encodeURIComponent(btoa(targetUrl)) : '';
+            const fullUrl = `/?pw=${AUTH_PW}&target=${encoded}`;
+            const domain = targetUrl ? extractDomain(fullUrl) : "New Tab";
+
+            // Register State
+            state.tabs[tabId] = { id: tabId, domain: domain, url: fullUrl };
+
+            // Create Tab UI
+            const tabEl = document.createElement('div');
+            tabEl.className = 'tab';
+            tabEl.id = `ui_${tabId}`;
+            tabEl.innerHTML = `
+                <span class="tab-title">${domain}</span>
+                <button class="tab-close" onclick="closeTab('${tabId}', event)">×</button>
+            `;
+            tabEl.onclick = () => switchTab(tabId);
+            elements.tabBar.appendChild(tabEl);
+
+            // Create Iframe
+            const iframe = document.createElement('iframe');
+            iframe.className = 'browser-frame';
+            iframe.id = `iframe_${tabId}`;
+            iframe.src = fullUrl;
+            elements.container.appendChild(iframe);
+
+            switchTab(tabId);
+        };
+
+        window.switchTab = (tabId) => {
+            if (!state.tabs[tabId]) return;
+            state.activeTabId = tabId;
+
+            // Update UI
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.browser-frame').forEach(f => f.classList.remove('active'));
+            
+            document.getElementById(`ui_${tabId}`).classList.add('active');
+            document.getElementById(`iframe_${tabId}`).classList.add('active');
+
+            // Update Omnibox (Decode target to show real URL/Search)
+            const iframeSrc = document.getElementById(`iframe_${tabId}`).src;
+            try {
+                const tParam = new URLSearchParams(new URL(iframeSrc).search).get('target');
+                elements.input.value = tParam ? atob(decodeURIComponent(tParam)) : '';
+            } catch(e) { elements.input.value = ''; }
+        };
+
+        window.closeTab = (tabId, event) => {
+            event.stopPropagation();
+            document.getElementById(`ui_${tabId}`).remove();
+            document.getElementById(`iframe_${tabId}`).remove();
+            delete state.tabs[tabId];
+
+            const remaining = Object.keys(state.tabs);
+            if (remaining.length > 0) {
+                if (state.activeTabId === tabId) switchTab(remaining[remaining.length - 1]);
+            } else {
+                createTab(); // Always leave at least one tab open
+            }
+        };
+
+        document.getElementById('newTabBtn').addEventListener('click', () => createTab());
+
+        // --- 4. NAVIGATION & SEARCH ---
         elements.input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 const query = e.target.value;
                 const encoded = encodeURIComponent(btoa(query));
-                // Replace ?pw=YOUR_PASSWORD with whatever your actual auth method uses
-                const fullUrl = `/?pw=YOUR_PASSWORD&target=${encoded}`;
+                const fullUrl = `/?pw=${AUTH_PW}&target=${encoded}`;
                 
-                elements.frame.src = fullUrl;
+                const activeIframe = document.getElementById(`iframe_${state.activeTabId}`);
+                activeIframe.src = fullUrl;
                 
-                state.currentDomain = extractDomain(fullUrl);
-                state.history.push({ domain: state.currentDomain, query: query, time: new Date().toLocaleTimeString() });
+                const domain = extractDomain(fullUrl);
+                state.tabs[state.activeTabId].domain = domain;
+                document.querySelector(`#ui_${state.activeTabId} .tab-title`).innerText = domain;
+                
+                state.history.push({ domain: domain, query: query, time: new Date().toLocaleTimeString() });
             }
         });
 
-        // 2. Catch Errors from Backend (API/index.js postMessage)
+        // --- 5. SMART ERROR LOGGER ---
         window.addEventListener('message', (e) => {
             if (e.data && e.data.type === 'base_error') {
-                const domain = state.currentDomain;
+                const domain = state.tabs[state.activeTabId]?.domain || "Unknown";
                 if (!state.errors[domain]) state.errors[domain] = [];
                 
                 const timeStamp = `[${new Date().toLocaleTimeString()}]`;
                 state.errors[domain].push(`${timeStamp} ${e.data.log}`);
                 
-                // Live update if error panel is open
-                if (document.getElementById('errorPanel').classList.contains('active')) {
-                    renderErrors();
-                }
+                if (document.getElementById('errorPanel').classList.contains('active')) renderErrors();
             }
         });
 
-        // 3. Shift+T Hotkey
-        document.addEventListener('keydown', (e) => {
-            if (e.shiftKey && e.key.toLowerCase() === 't') {
-                e.preventDefault();
-                openPanel('errorPanel', 'Smart Error Logs');
-            }
-        });
-
-        // --- SIDEBAR UI LOGIC ---
+        // Toggle Sidebar
         const openPanel = (panelId, title) => {
             elements.sidebar.classList.add('open');
-            elements.title.innerText = title;
+            document.getElementById('sidebarTitle').innerText = title;
             document.getElementById('mainMenu').style.display = 'none';
             document.getElementById('historyPanel').classList.remove('active');
             document.getElementById('errorPanel').classList.remove('active');
@@ -186,85 +257,46 @@
         document.getElementById('closeSidebarBtn').addEventListener('click', () => elements.sidebar.classList.remove('open'));
         document.getElementById('backToMenu1').addEventListener('click', () => openPanel(null, 'Menu'));
         document.getElementById('backToMenu2').addEventListener('click', () => openPanel(null, 'Menu'));
-
-        // --- MENU BUTTON ACTIONS ---
-        // Reload
-        document.getElementById('btnReload').addEventListener('click', () => {
-            elements.frame.contentWindow.location.reload();
-            elements.sidebar.classList.remove('open');
-        });
-
-        // History
+        document.getElementById('btnReload').addEventListener('click', () => { document.getElementById(`iframe_${state.activeTabId}`).src = document.getElementById(`iframe_${state.activeTabId}`).src; elements.sidebar.classList.remove('open'); });
         document.getElementById('btnHistory').addEventListener('click', () => openPanel('historyPanel', 'Session History'));
-
-        // Errors
         document.getElementById('btnErrors').addEventListener('click', () => openPanel('errorPanel', 'Smart Error Logs'));
 
-        // --- RENDERING LOGIC ---
-        const renderHistory = () => {
-            const list = document.getElementById('historyList');
-            if (state.history.length === 0) {
-                list.innerHTML = "<p style='color:#666; text-align:center;'>No history in this session.</p>";
-                return;
-            }
-            list.innerHTML = state.history.slice().reverse().map(h => 
-                `<div class="history-item"><strong>${h.time}</strong><br>${h.domain}<br><span style="color:#666;">${h.query}</span></div>`
-            ).join('');
-        };
-
-        // Smart Error Rendering
-        let errorFilter = 'current'; // 'current' or 'all'
-        
-        document.getElementById('filterCurrent').addEventListener('click', (e) => {
-            errorFilter = 'current';
-            e.target.classList.add('active');
-            document.getElementById('filterAll').classList.remove('active');
-            renderErrors();
-        });
-
-        document.getElementById('filterAll').addEventListener('click', (e) => {
-            errorFilter = 'all';
-            e.target.classList.add('active');
-            document.getElementById('filterCurrent').classList.remove('active');
-            renderErrors();
-        });
+        // Rendering Error Logs
+        let errorFilter = 'current';
+        document.getElementById('filterCurrent').addEventListener('click', (e) => { errorFilter = 'current'; e.target.classList.add('active'); document.getElementById('filterAll').classList.remove('active'); renderErrors(); });
+        document.getElementById('filterAll').addEventListener('click', (e) => { errorFilter = 'all'; e.target.classList.add('active'); document.getElementById('filterCurrent').classList.remove('active'); renderErrors(); });
 
         window.copyLogs = (domain) => {
-            const logs = state.errors[domain].join('\n');
-            navigator.clipboard.writeText(logs).then(() => alert(`Copied logs for ${domain}`));
+            navigator.clipboard.writeText(state.errors[domain].join('\n')).then(() => alert(`Copied logs for ${domain}`));
+        };
+
+        const renderHistory = () => {
+            document.getElementById('historyList').innerHTML = state.history.length === 0 
+                ? "<p style='color:#666; text-align:center;'>No history in this session.</p>"
+                : state.history.slice().reverse().map(h => `<div class="history-item"><strong>${h.time}</strong><br>${h.domain}<br><span style="color:#666;">${h.query}</span></div>`).join('');
         };
 
         const renderErrors = () => {
             const list = document.getElementById('errorList');
             list.innerHTML = '';
-
-            const domainsToRender = errorFilter === 'current' 
-                ? [state.currentDomain] 
-                : Object.keys(state.errors);
-
+            const activeDomain = state.tabs[state.activeTabId]?.domain;
+            const domainsToRender = errorFilter === 'current' ? [activeDomain] : Object.keys(state.errors);
             let hasErrors = false;
 
             domainsToRender.forEach(domain => {
                 if (state.errors[domain] && state.errors[domain].length > 0) {
                     hasErrors = true;
-                    let logsHtml = state.errors[domain].map(log => `<div class="log-entry">${log}</div>`).join('');
-                    
-                    list.innerHTML += `
-                        <div class="domain-group">
-                            <div class="domain-header">
-                                <span>${domain} (${state.errors[domain].length})</span>
-                                <button class="copy-btn" onclick="copyLogs('${domain}')">Copy</button>
-                            </div>
-                            <div>${logsHtml}</div>
-                        </div>
-                    `;
+                    list.innerHTML += `<div class="domain-group"><div class="domain-header"><span>${domain} (${state.errors[domain].length})</span><button class="copy-btn" onclick="copyLogs('${domain}')">Copy</button></div><div>${state.errors[domain].map(log => `<div class="log-entry">${log}</div>`).join('')}</div></div>`;
                 }
             });
-
-            if (!hasErrors) {
-                list.innerHTML = "<p style='color:#666; text-align:center;'>No errors caught.</p>";
-            }
+            if (!hasErrors) list.innerHTML = "<p style='color:#666; text-align:center;'>No errors caught.</p>";
         };
+
+        // Hotkey
+        document.addEventListener('keydown', (e) => { if (e.shiftKey && e.key.toLowerCase() === 't') { e.preventDefault(); openPanel('errorPanel', 'Smart Error Logs'); } });
+
+        // Initialize First Tab
+        createTab();
     </script>
 </body>
 </html>
