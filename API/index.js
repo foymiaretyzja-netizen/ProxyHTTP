@@ -39,7 +39,9 @@ app.all('*', async (req, res) => {
     target = decode(target);
     
     // --- 2. CUSTOM HEADLESS SEARCH ENGINE ---
-    if (!target.includes('.') || target.includes(' ')) {
+    let isSearch = !target.includes('.') || target.includes(' ');
+    
+    if (isSearch) {
         try {
             const searchRes = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(target), {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
@@ -121,12 +123,14 @@ app.all('*', async (req, res) => {
             res.setHeader('Content-Type', 'text/html');
             return res.send(customUI);
         } catch (err) {
+            // PATCH: If search scraping fails, safely pass the search URL to the proxy engine below
             target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
         }
     } 
     
     // --- 3. MAIN PROXY ENGINE ---
-    else if (!target.startsWith('http')) {
+    // PATCH: No more 'else if'. Always flow into here if a target exists.
+    if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
 
@@ -142,9 +146,15 @@ app.all('*', async (req, res) => {
         const finalTarget = response.url;
         const contentType = response.headers.get('content-type') || '';
 
-        // --- 4. MEDIA & ASSET HANDLER (Fixes broken images/video/CSS) ---
+        // --- 4. MEDIA & ASSET HANDLER (Patched for Vercel 4.5MB Limits) ---
         if (!contentType.includes('text/html')) {
             const buffer = await response.arrayBuffer();
+            
+            // Vercel Serverless limits payload to 4.5MB. If it's bigger (e.g. video), bypass the proxy to prevent a 500 Crash.
+            if (buffer.byteLength > 4400000) {
+                return res.redirect(finalTarget); 
+            }
+            
             res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
             res.setHeader('Content-Type', contentType);
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -176,17 +186,15 @@ app.all('*', async (req, res) => {
             rewrite(t, a);
         });
 
-        // --- 6. CLIENT-SIDE INJECTIONS (The Bypass Magic + Error Fixes) ---
+        // --- 6. CLIENT-SIDE INJECTIONS ---
         const vNav = `
             <script>
                 const _encodeUrl = (url) => encodeURIComponent(btoa(url));
                 const _baseUrl = "${finalTarget}"; 
 
-                // A. Silent Mocks for third-party crashers
                 window.__tcfapi = function(cmd, ver, cb) { if(cb) cb(null, false); };
                 window.__uspapi = function(cmd, ver, cb) { if(cb) cb(null, false); };
 
-                // B. Base Error Forwarder
                 window.onerror = function(msg, url, line, col, error) {
                     try { window.parent.postMessage({ type: 'base_error', log: msg + ' (Line: ' + line + ')' }, '*'); } catch(e) {}
                     return false; 
@@ -201,7 +209,6 @@ app.all('*', async (req, res) => {
                     origConsoleErr.apply(console, args);
                 };
 
-                // C. The Universal Router
                 const _route = (url) => {
                     if (!url || typeof url !== 'string') return url;
                     if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('javascript:') || url.startsWith('#')) return url;
@@ -214,7 +221,6 @@ app.all('*', async (req, res) => {
                     return url;
                 };
 
-                // D. Dynamic Fetch/XHR Interceptors
                 const origFetch = window.fetch;
                 window.fetch = async function(resource, options) {
                     if (typeof resource === 'string') resource = _route(resource);
@@ -227,7 +233,6 @@ app.all('*', async (req, res) => {
                     return origOpen.call(this, method, _route(url), ...rest);
                 };
 
-                // E. Dynamic DOM Element Interceptor (Fixes Webpack & White Pages)
                 const hookProperty = (proto, prop) => {
                     const desc = Object.getOwnPropertyDescriptor(proto, prop);
                     if (desc && desc.set) {
@@ -242,7 +247,6 @@ app.all('*', async (req, res) => {
                 hookProperty(HTMLImageElement.prototype, 'src');
                 hookProperty(HTMLIFrameElement.prototype, 'src');
 
-                // F. Link & Form Hijackers
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href) {
@@ -285,9 +289,9 @@ app.all('*', async (req, res) => {
         res.send($.html());
 
     } catch (e) {
+        // Safe Catch: Returns a real HTML error instead of timing out Vercel
         res.send("<body style='background:#000;color:#fff;text-align:center;padding:50px;font-family:sans-serif;'><h1>Connection Error</h1><p>The proxy could not fetch this page safely.</p><button onclick='window.parent.location.replace(\"/\")' style='padding:10px 20px;border-radius:10px;cursor:pointer;background:#fff;color:#000;font-weight:bold;border:none;'>Go Home</button></body>");
     }
 });
 
 module.exports = app;
-        `;
