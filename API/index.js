@@ -12,7 +12,6 @@ const decode = (str) => {
 };
 
 app.all('*', async (req, res) => {
-    // --- 🍪 THE COOKIE AUTH SYSTEM ---
     let pw = req.query.pw;
     let cookieHeader = req.headers.cookie || '';
     
@@ -31,7 +30,6 @@ app.all('*', async (req, res) => {
     }
 
     res.setHeader('Set-Cookie', `base_pw=${pw}; Path=/; Max-Age=31536000; SameSite=Lax`);
-    // ----------------------------------
 
     let target = req.query.target;
     
@@ -41,10 +39,9 @@ app.all('*', async (req, res) => {
     
     target = decode(target);
     
-    // --- 🔍 NEW: BASE CUSTOM SEARCH ENGINE ---
+    // Custom Search Engine
     if (!target.includes('.') || target.includes(' ')) {
         try {
-            // Fetch raw HTML results from a lightweight index
             const searchRes = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(target), {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
             });
@@ -53,21 +50,17 @@ app.all('*', async (req, res) => {
             
             let resultsHTML = '';
             
-            // Extract the top 10 results
             $s('.result').slice(0, 10).each((i, el) => {
                 const title = $s(el).find('.result__title a').text();
                 const snippet = $s(el).find('.result__snippet').text();
                 let rawLink = $s(el).find('.result__a').attr('href');
                 
                 if (title && rawLink) {
-                    // Clean up tracking URLs
                     if (rawLink.startsWith('//duckduckgo.com/l/?')) {
                         const urlParams = new URLSearchParams(rawLink.split('?')[1]);
                         rawLink = decodeURIComponent(urlParams.get('uddg') || '');
                     }
-                    
                     const domain = new URL(rawLink).hostname;
-                    // Grab high-quality logo/favicon automatically
                     const logo = `https://www.google.com/s2/favicons?sz=64&domain=${domain}`;
                     const encodedLink = encode(rawLink);
 
@@ -84,7 +77,6 @@ app.all('*', async (req, res) => {
                 }
             });
 
-            // The Custom Search UI
             const customUI = `
                 <!DOCTYPE html>
                 <html lang="en">
@@ -108,9 +100,7 @@ app.all('*', async (req, res) => {
                             <input type="text" id="s" value="${target}" autocomplete="off">
                             <button type="submit">Search</button>
                         </form>
-                        <div id="results">
-                            ${resultsHTML || '<h3 style="color:#888; text-align:center; margin-top:50px;">No results found for this query.</h3>'}
-                        </div>
+                        <div id="results">${resultsHTML || '<h3 style="color:#888; text-align:center;">No results found.</h3>'}</div>
                     </div>
                     <script>
                         document.getElementById('searchForm').addEventListener('submit', e => {
@@ -118,7 +108,6 @@ app.all('*', async (req, res) => {
                             const val = document.getElementById('s').value;
                             window.location.replace('/?pw=${pw}&target=' + encodeURIComponent(btoa(val)));
                         });
-                        // Override link clicks so they don't trigger the extension
                         document.addEventListener('click', e => {
                             const link = e.target.closest('a');
                             if (link && link.href.includes('target=')) {
@@ -130,15 +119,12 @@ app.all('*', async (req, res) => {
                 </body>
                 </html>
             `;
-            
             res.setHeader('Content-Type', 'text/html');
             return res.send(customUI);
-
         } catch (err) {
             target = 'https://duckduckgo.com/?q=' + encodeURIComponent(target);
         }
     } 
-    // --- 🌍 NORMAL PROXY ROUTING ---
     else if (!target.startsWith('http')) {
         target = 'https://' + target;
     }
@@ -168,7 +154,6 @@ app.all('*', async (req, res) => {
         const $ = cheerio.load(html);
 
         $('meta[http-equiv="refresh"]').remove();
-        $('title').text('My Drive - Google Drive');
         
         const rewrite = (tag, attr) => {
             $(tag).each((i, el) => {
@@ -190,6 +175,28 @@ app.all('*', async (req, res) => {
 
         const vNav = `
             <script>
+                // --- NEW: DYNAMIC REQUEST INTERCEPTORS ---
+                // This forces background JavaScript API calls to route through the proxy
+                const _encodeUrl = (url) => encodeURIComponent(btoa(url));
+                
+                const origFetch = window.fetch;
+                window.fetch = async function(resource, options) {
+                    let url = typeof resource === 'string' ? resource : resource.url;
+                    if (url && url.startsWith('http') && !url.includes(window.location.host)) {
+                        resource = '/?target=' + _encodeUrl(url);
+                    }
+                    return origFetch(resource, options);
+                };
+
+                const origOpen = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                    if (typeof url === 'string' && url.startsWith('http') && !url.includes(window.location.host)) {
+                        url = '/?target=' + _encodeUrl(url);
+                    }
+                    return origOpen.call(this, method, url, ...rest);
+                };
+                // -----------------------------------------
+
                 document.addEventListener('click', e => {
                     const link = e.target.closest('a');
                     if (link && link.href.includes('target=')) {
@@ -211,7 +218,7 @@ app.all('*', async (req, res) => {
                                     const formData = new FormData(form);
                                     const searchParams = new URLSearchParams(formData).toString();
                                     const joiner = decodedAction.includes('?') ? '&' : '?';
-                                    const finalTarget = encodeURIComponent(btoa(decodedAction + joiner + searchParams));
+                                    const finalTarget = _encodeUrl(decodedAction + joiner + searchParams);
                                     window.location.replace('/?target=' + finalTarget);
                                 }
                             }
@@ -220,19 +227,7 @@ app.all('*', async (req, res) => {
                 });
 
                 window.open = (url) => { window.location.replace(url); return null; };
-                
-                document.addEventListener('keydown', e => {
-                    if(e.shiftKey && e.key.toLowerCase() === 'q') {
-                        const menu = document.getElementById('base-menu');
-                        menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
-                    }
-                });
             </script>
-            <div id="base-menu" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.95);color:#fff;padding:10px 25px;border-radius:50px;z-index:9999999;display:none;border:1px solid #333;font-family:sans-serif;align-items:center;box-shadow:0 0 20px rgba(0,0,0,0.5);">
-                <span style="font-weight:bold;color:#fff;margin-right:15px">BASE</span>
-                <button onclick="window.location.replace('/')" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;cursor:pointer;">Home</button>
-                <button onclick="location.reload()" style="background:#222;color:#fff;border:none;padding:8px 15px;border-radius:20px;margin-left:5px;cursor:pointer;">Reload</button>
-            </div>
         `;
 
         $('body').append(vNav);
