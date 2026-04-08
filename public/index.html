@@ -22,12 +22,18 @@
         #tabs-container { display: flex; align-items: center; flex-grow: 1; overflow-x: auto; scrollbar-width: none; height: 100%; }
         #tabs-container::-webkit-scrollbar { display: none; }
         
-        .tab { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 100%; min-width: 150px; max-width: 200px; background: transparent; color: #888; cursor: pointer; border-right: 1px solid #333; font-size: 14px; transition: 0.2s; user-select: none; }
+        .tab { display: flex; align-items: center; justify-content: space-between; padding: 0 15px; height: 100%; min-width: 160px; max-width: 220px; background: transparent; color: #888; cursor: pointer; border-right: 1px solid #333; font-size: 14px; transition: 0.2s; user-select: none; }
         .tab:hover { background: #222; }
         
         /* The Active Tab Highlight */
         .tab.active { background: var(--tab-active); color: var(--accent); font-weight: 500; border-bottom: 3px solid var(--accent); }
-        .close-tab { font-size: 16px; margin-left: 10px; opacity: 0.5; padding: 2px 6px; border-radius: 4px; }
+        
+        /* Favicon and Title Styling */
+        .tab-content { display: flex; align-items: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex-grow: 1; }
+        .favicon { width: 16px; height: 16px; margin-right: 8px; border-radius: 3px; display: none; background: #fff; }
+        .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .close-tab { font-size: 18px; margin-left: 10px; opacity: 0.5; padding: 0px 6px; border-radius: 4px; line-height: 1; }
         .close-tab:hover { opacity: 1; background: rgba(255,255,255,0.1); }
 
         #add-tab { background: transparent; border: none; color: #888; font-size: 24px; cursor: pointer; padding: 0 15px; height: 100%; transition: 0.2s; }
@@ -62,7 +68,6 @@
     </div>
 
     <div id="viewport"></div>
-
     <div id="toast">Press Shift+Q or Esc to exit fullscreen</div>
 
     <script>
@@ -80,23 +85,26 @@
             tabCounter++;
             const tabId = 'tab-' + tabCounter;
             
-            // 1. Create the Tab UI Button
             const tabEl = document.createElement('div');
             tabEl.className = 'tab';
             tabEl.id = 'ui-' + tabId;
-            tabEl.innerHTML = `<span class="title">Home</span> <span class="close-tab">×</span>`;
+            // Added favicon image tag inside the tab content
+            tabEl.innerHTML = `
+                <div class="tab-content">
+                    <img class="favicon" src="" alt="icon">
+                    <span class="title">Home</span>
+                </div>
+                <span class="close-tab">×</span>
+            `;
             
-            // Click to switch tabs
             tabEl.addEventListener('click', (e) => {
                 if(e.target.className !== 'close-tab') switchTab(tabId);
             });
             
-            // Click to close tab
             tabEl.querySelector('.close-tab').addEventListener('click', () => closeTab(tabId));
             
             tabsContainer.appendChild(tabEl);
 
-            // 2. Create the View (The Home Screen)
             const viewEl = document.createElement('div');
             viewEl.className = 'view home-view';
             viewEl.id = 'view-' + tabId;
@@ -114,25 +122,18 @@
 
         function switchTab(tabId) {
             activeTabId = tabId;
-            
-            // Update UI styles
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.getElementById('ui-' + tabId).classList.add('active');
             
-            // Update Visible Views
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.getElementById('view-' + tabId).classList.add('active');
         }
 
         function closeTab(tabId) {
-            // Remove DOM elements
             document.getElementById('ui-' + tabId).remove();
             document.getElementById('view-' + tabId).remove();
-            
-            // Remove from array
             tabs = tabs.filter(t => t !== tabId);
             
-            // If we closed the active tab, switch to the last open one, or create a new one
             if (activeTabId === tabId) {
                 if (tabs.length > 0) {
                     switchTab(tabs[tabs.length - 1]);
@@ -142,24 +143,50 @@
             }
         }
 
-        // --- PROXY LAUNCH LOGIC ---
+        // --- PROXY LAUNCH & METADATA EXTRACTION LOGIC ---
         window.launchSearch = function(event, tabId) {
             event.preventDefault();
-            const input = event.target.querySelector('.search-input').value;
+            const input = event.target.querySelector('.search-input').value.trim();
             const targetBase64 = encodeURIComponent(btoa(input));
             
-            // Change the tab title
-            document.querySelector('#ui-' + tabId + ' .title').innerText = "Loading...";
+            // 1. Determine the domain for the Favicon
+            let domain = "duckduckgo.com"; // Default to search engine
+            if (input.includes('.') && !input.includes(' ')) {
+                try { 
+                    const urlToParse = input.startsWith('http') ? input : 'https://' + input;
+                    domain = new URL(urlToParse).hostname; 
+                } catch(e) {}
+            }
 
-            // Create an iframe to replace the home view
+            // 2. Update UI instantly with Loading state and the logo
+            const tabEl = document.getElementById('ui-' + tabId);
+            const titleEl = tabEl.querySelector('.title');
+            const iconEl = tabEl.querySelector('.favicon');
+            
+            titleEl.innerText = "Loading...";
+            iconEl.src = `https://www.google.com/s2/favicons?sz=32&domain=${domain}`;
+            iconEl.style.display = "block"; // Make the logo visible
+
+            // 3. Inject the Proxy Iframe
             const viewEl = document.getElementById('view-' + tabId);
-            
-            // Optional: You can append '?pw=YOUR_PASSWORD' if needed, but cookies handle it now!
-            viewEl.innerHTML = `<iframe src="/?target=${targetBase64}" style="width:100%; height:100%; border:none;"></iframe>`;
-            
-            // Update title to target once loaded (rough estimate)
+            viewEl.innerHTML = `<iframe src="/?target=${targetBase64}" style="width:100%; height:100%; border:none;" id="iframe-${tabId}"></iframe>`;
             viewEl.classList.remove('home-view');
-            document.querySelector('#ui-' + tabId + ' .title').innerText = "Web";
+
+            // 4. Listen for the iframe to finish loading to steal the true website title
+            const iframe = document.getElementById('iframe-' + tabId);
+            iframe.onload = () => {
+                try {
+                    // Because our backend proxies everything through the same domain, CORS allows this!
+                    const siteTitle = iframe.contentDocument.title;
+                    if (siteTitle && siteTitle.trim() !== "") {
+                        titleEl.innerText = siteTitle;
+                    } else {
+                        titleEl.innerText = domain; // Fallback
+                    }
+                } catch(e) {
+                    titleEl.innerText = domain; // Fallback if blocked
+                }
+            };
         };
 
         // --- FULLSCREEN LOGIC ---
@@ -177,16 +204,14 @@
             }
         });
 
-        // Listen for standard fullscreen changes (like hitting Esc or the API triggering)
         document.addEventListener('fullscreenchange', () => {
             if (document.fullscreenElement) {
-                topBar.style.display = 'none'; // Hide tabs
+                topBar.style.display = 'none';
             } else {
-                topBar.style.display = 'flex'; // Show tabs
+                topBar.style.display = 'flex';
             }
         });
 
-        // Custom exit using Shift+Q
         document.addEventListener('keydown', (e) => {
             if (e.shiftKey && e.key.toLowerCase() === 'q') {
                 if (document.fullscreenElement) {
@@ -195,10 +220,8 @@
             }
         });
 
-        // Initialization
         document.getElementById('add-tab').addEventListener('click', createTab);
-        createTab(); // Open the first default tab on load
-
+        createTab();
     </script>
 </body>
 </html>
