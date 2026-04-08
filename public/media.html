@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BaseMedia</title>
+    <style>
+        /* --- PURE DARK MODE AESTHETIC --- */
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            color: #e0e0e0;
+            font-family: sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* --- HEADER --- */
+        .media-header {
+            background: #0a0a0a;
+            padding: 20px 40px;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .media-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+            letter-spacing: -0.5px;
+        }
+        .media-header span {
+            color: #888;
+            margin-left: 15px;
+            font-size: 14px;
+        }
+
+        /* --- MEDIA GRID --- */
+        .media-container {
+            padding: 40px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 30px;
+        }
+        
+        /* --- VIDEO CARDS --- */
+        .video-card {
+            background: #0a0a0a;
+            border: 1px solid #222;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: 0.2s;
+        }
+        .video-card:hover {
+            border-color: #444;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        .video-wrapper {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            background: #111;
+        }
+        .video-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .video-info {
+            padding: 15px;
+        }
+        .video-title {
+            margin: 0;
+            font-size: 15px;
+            color: #ccc;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="media-header">
+        <h1>🎬 BaseMedia</h1>
+        <span>Curated Gallery</span>
+    </div>
+
+    <div class="media-container">
+        <div class="video-grid" id="mediaGrid">
+            </div>
+    </div>
+
+    <script>
+        // --- MEDIA FETCHING & ROUTING LOGIC ---
+        async function loadMedia() {
+            try {
+                // Fetch the holding place data
+                const response = await fetch('media.json');
+                if (!response.ok) throw new Error(`Failed to load media.json (HTTP ${response.status})`);
+                
+                const videos = await response.json();
+                const grid = document.getElementById('mediaGrid');
+                
+                videos.forEach(vid => {
+                    let embedUrl = vid.url;
+                    
+                    // Smart Parser: Converts standard YouTube links to embeddable iFrames
+                    if (vid.url.includes('youtu.be/')) {
+                        const id = vid.url.split('youtu.be/')[1].split('?')[0];
+                        embedUrl = `https://www.youtube.com/embed/${id}`;
+                    } else if (vid.url.includes('youtube.com/watch')) {
+                        const params = new URLSearchParams(new URL(vid.url).search);
+                        embedUrl = `https://www.youtube.com/embed/${params.get('v')}`;
+                    }
+
+                    // Build the UI Card
+                    const card = document.createElement('div');
+                    card.className = 'video-card';
+                    card.innerHTML = `
+                        <div class="video-wrapper">
+                            <iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                        </div>
+                        <div class="video-info">
+                            <h3 class="video-title">${vid.title}</h3>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+
+            } catch (error) {
+                // Instantly routes the error to your proxy's Smart Error Logger!
+                window.parent.postMessage({ 
+                    type: 'base_error', 
+                    log: `BaseMedia Fetch Error: ${error.message}` 
+                }, '*');
+                
+                document.getElementById('mediaGrid').innerHTML = `
+                    <p style="color: #ff5252; font-family: monospace;">
+                        [!] Failed to load media gallery. Check the Smart Error Logs in the sidebar for details.
+                    </p>`;
+            }
+        }
+
+        // Initialize
+        loadMedia();
+    </script>
+</body>
+</html>
