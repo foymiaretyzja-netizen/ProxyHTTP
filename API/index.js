@@ -1,8 +1,11 @@
 const express = require('express');
 const cheerio = require('cheerio');
 const path = require('path');
-const fs = require('fs');
 const app = express();
+
+// 1. THE STATIC SERVER (This is the new magic line)
+// It tells Express to automatically serve any CSS, JS, or images you put in the 'public' folder.
+app.use(express.static(path.join(__dirname, '../public')));
 
 const encode = (str) => encodeURIComponent(Buffer.from(str).toString('base64'));
 const decode = (str) => {
@@ -16,18 +19,13 @@ app.all('*', async (req, res) => {
 
     let target = req.query.target;
     
-    // IF NO TARGET: Send the separated Frontend UI
+    // 2. CLEANER UI DELIVERY
+    // If there's no target, it safely sends your separated index.html file
     if (!target) {
-        try {
-            const htmlPath = path.join(__dirname, '../public/index.html');
-            const uiHTML = fs.readFileSync(htmlPath, 'utf8');
-            return res.send(uiHTML);
-        } catch (err) {
-            return res.status(500).send("Error loading UI.");
-        }
+        return res.sendFile(path.join(__dirname, '../public/index.html'));
     }
     
-    // IF TARGET EXISTS: Run the Proxy Engine
+    // 3. THE PROXY ENGINE
     target = decode(target);
     if (!target.startsWith('http')) target = 'https://' + target;
 
