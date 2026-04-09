@@ -249,4 +249,114 @@
             // UI Address Bar Logic based on tab type
             if (state.tabs[tabId].isLocal) {
                 elements.input.value = `file://${state.tabs[tabId].domain}`;
-            } else if (iframe.hasAttribute('srcdoc') && !state.tabs[tabId].isLocal)
+            } else if (iframe.hasAttribute('srcdoc') && !state.tabs[tabId].isLocal) {
+                elements.input.value = ''; 
+            } else {
+                try { elements.input.value = atob(decodeURIComponent(new URLSearchParams(new URL(iframe.src).search).get('target'))); } 
+                catch(e) { elements.input.value = ''; }
+            }
+        };
+
+        window.closeTab = (tabId, event) => {
+            event.stopPropagation();
+            document.getElementById(`ui_${tabId}`).remove(); document.getElementById(`iframe_${tabId}`).remove();
+            delete state.tabs[tabId];
+            const remaining = Object.keys(state.tabs);
+            if (remaining.length > 0) { if (state.activeTabId === tabId) switchTab(remaining[remaining.length - 1]); } 
+            else { createTab(); }
+        };
+
+        document.getElementById('newTabBtn').addEventListener('click', () => createTab());
+
+        document.getElementById('fullScreenBtn').addEventListener('click', () => {
+            if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(err => console.error(err)); } 
+            else { if (document.exitFullscreen) document.exitFullscreen(); }
+        });
+
+        // --- 6. EVENT LISTENERS ---
+        elements.input.addEventListener('keydown', (e) => { if (e.key === 'Enter') executeSearch(e.target.value); });
+
+        window.addEventListener('message', (e) => {
+            // Standard Web Search
+            if (e.data && e.data.type === 'base_search') {
+                executeSearch(e.data.query); 
+            }
+            
+            // Local Drag & Drop HTML Games
+            if (e.data && e.data.type === 'base_local_html') {
+                const activeIframe = document.getElementById(`iframe_${state.activeTabId}`);
+                
+                // Clear any src and inject the raw HTML directly
+                activeIframe.removeAttribute('src');
+                activeIframe.srcdoc = e.data.content;
+                
+                // Update UI to reflect the local file
+                const domain = e.data.filename;
+                state.tabs[state.activeTabId].domain = domain;
+                state.tabs[state.activeTabId].isLocal = true;
+                
+                document.querySelector(`#ui_${state.activeTabId} .tab-title`).innerText = domain;
+                elements.input.value = `file://${domain}`; 
+                
+                state.history.push({ domain: domain, query: `Loaded Local File: ${domain}`, time: new Date().toLocaleTimeString() });
+            }
+
+            // Error Logging
+            if (e.data && e.data.type === 'base_error') {
+                const domain = state.tabs[state.activeTabId]?.domain || "Unknown";
+                if (!state.errors[domain]) state.errors[domain] = [];
+                state.errors[domain].push(`[${new Date().toLocaleTimeString()}] ${e.data.log}`);
+                if (document.getElementById('errorPanel').classList.contains('active')) renderErrors();
+            }
+        });
+
+        // --- 7. SIDEBAR LOGIC ---
+        const openPanel = (panelId, title) => {
+            elements.sidebar.classList.add('open');
+            document.getElementById('sidebarTitle').innerText = title;
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('historyPanel').classList.remove('active'); document.getElementById('errorPanel').classList.remove('active');
+            
+            if (panelId) { document.getElementById(panelId).classList.add('active'); if (panelId === 'historyPanel') renderHistory(); if (panelId === 'errorPanel') renderErrors(); } 
+            else { document.getElementById('mainMenu').style.display = 'block'; }
+        };
+
+        document.getElementById('toggleSidebarBtn').addEventListener('click', () => openPanel(null, 'Menu'));
+        document.getElementById('closeSidebarBtn').addEventListener('click', () => elements.sidebar.classList.remove('open'));
+        document.getElementById('backToMenu1').addEventListener('click', () => openPanel(null, 'Menu'));
+        document.getElementById('backToMenu2').addEventListener('click', () => openPanel(null, 'Menu'));
+        document.getElementById('btnReload').addEventListener('click', () => { 
+            const iframe = document.getElementById(`iframe_${state.activeTabId}`);
+            if (!iframe.hasAttribute('srcdoc')) iframe.src = iframe.src; 
+            elements.sidebar.classList.remove('open'); 
+        });
+        document.getElementById('btnHistory').addEventListener('click', () => openPanel('historyPanel', 'Session History'));
+        document.getElementById('btnErrors').addEventListener('click', () => openPanel('errorPanel', 'Smart Error Logs'));
+
+        let errorFilter = 'current';
+        document.getElementById('filterCurrent').addEventListener('click', (e) => { errorFilter = 'current'; e.target.classList.add('active'); document.getElementById('filterAll').classList.remove('active'); renderErrors(); });
+        document.getElementById('filterAll').addEventListener('click', (e) => { errorFilter = 'all'; e.target.classList.add('active'); document.getElementById('filterCurrent').classList.remove('active'); renderErrors(); });
+
+        window.copyLogs = (domain) => navigator.clipboard.writeText(state.errors[domain].join('\n')).then(() => alert(`Copied logs for ${domain}`));
+
+        const renderHistory = () => { document.getElementById('historyList').innerHTML = state.history.length === 0 ? "<p style='color:#666; text-align:center;'>No history in this session.</p>" : state.history.slice().reverse().map(h => `<div class="history-item"><strong>${h.time}</strong><br>${h.domain}<br><span style="color:#666;">${h.query}</span></div>`).join(''); };
+        const renderErrors = () => {
+            const list = document.getElementById('errorList'); list.innerHTML = '';
+            const domainsToRender = errorFilter === 'current' ? [state.tabs[state.activeTabId]?.domain] : Object.keys(state.errors);
+            let hasErrors = false;
+            domainsToRender.forEach(domain => {
+                if (state.errors[domain] && state.errors[domain].length > 0) {
+                    hasErrors = true;
+                    list.innerHTML += `<div class="domain-group"><div class="domain-header"><span>${domain} (${state.errors[domain].length})</span><button class="copy-btn" onclick="copyLogs('${domain}')">Copy</button></div><div>${state.errors[domain].map(log => `<div class="log-entry">${log}</div>`).join('')}</div></div>`;
+                }
+            });
+            if (!hasErrors) list.innerHTML = "<p style='color:#666; text-align:center;'>No errors caught.</p>";
+        };
+
+        document.addEventListener('keydown', (e) => { if (e.shiftKey && e.key.toLowerCase() === 't') { e.preventDefault(); openPanel('errorPanel', 'Smart Error Logs'); } });
+
+        // Initialize First Tab
+        createTab();
+    </script>
+</body>
+</html>
