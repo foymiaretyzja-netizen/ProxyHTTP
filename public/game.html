@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base Proxy</title>
+    <style>
+        /* --- BASE UI STYLES (PURE DARK MODE) --- */
+        body { margin: 0; padding: 0; background: #000; color: #e0e0e0; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        
+        /* --- TAB SYSTEM STYLES --- */
+        .tab-bar { display: flex; background: #000; padding: 8px 10px 0 10px; overflow-x: auto; }
+        .tab { display: flex; align-items: center; background: #0a0a0a; margin-right: 5px; padding: 8px 15px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 13px; color: #888; border: 1px solid #1a1a1a; border-bottom: none; min-width: 120px; max-width: 200px; justify-content: space-between; transition: 0.1s; }
+        .tab:hover { background: #111; color: #aaa; }
+        .tab.active { background: #1a1a1a; color: #fff; font-weight: bold; border-color: #222; }
+        .tab-close { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; margin-left: 10px; opacity: 0.5; }
+        .tab-close:hover { opacity: 1; color: #ff6b6b; }
+
+        /* --- TOPBAR (ADDRESS BAR) --- */
+        .topbar { background: #1a1a1a; padding: 10px 20px; display: flex; align-items: center; border-bottom: 1px solid #222; z-index: 10; }
+        .omnibox { flex-grow: 1; margin: 0 20px; padding: 8px 15px; border-radius: 20px; background: #0f0f0f; border: 1px solid #333; color: #fff; outline: none; transition: 0.2s; }
+        .omnibox:focus { border-color: #555; }
+        .icon-btn { background: none; border: none; color: #888; font-size: 20px; cursor: pointer; margin: 0 5px; transition: 0.2s; }
+        .icon-btn:hover { color: #fff; }
+        
+        .browser-container { flex-grow: 1; position: relative; background: #000; }
+        .browser-frame { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; display: none; background: #000; }
+        .browser-frame.active { display: block; }
+
+        /* --- SIDEBAR STYLES --- */
+        #sidebar {
+            position: fixed; top: 0; right: -350px; width: 350px; height: 100vh;
+            background: #0a0a0a; border-left: 1px solid #222; box-shadow: -5px 0 20px rgba(0,0,0,0.8);
+            transition: right 0.3s ease; display: flex; flex-direction: column; z-index: 9999;
+        }
+        #sidebar.open { right: 0; }
+        
+        .sidebar-header { padding: 20px; background: #111; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; }
+        .sidebar-header h2 { margin: 0; font-size: 18px; color: #fff; }
+        .close-btn { background: none; border: none; color: #888; font-size: 24px; cursor: pointer; transition: 0.2s; }
+        .close-btn:hover { color: #fff; }
+
+        .sidebar-content { padding: 20px; overflow-y: auto; flex-grow: 1; }
+        
+        .menu-item { display: flex; align-items: center; padding: 15px; background: #151515; margin-bottom: 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; border: 1px solid #222; }
+        .menu-item:hover { background: #222; border-color: #333; }
+        .menu-item span { font-size: 20px; margin-right: 15px; color: #ccc; }
+
+        /* --- SMART ERROR LOGGER STYLES --- */
+        .error-panel { display: none; }
+        .error-panel.active { display: block; }
+        .filter-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .filter-btn { flex: 1; padding: 8px; background: #151515; color: #888; border: 1px solid #222; border-radius: 6px; cursor: pointer; font-size: 12px; transition: 0.2s; }
+        .filter-btn:hover { background: #222; }
+        .filter-btn.active { background: #333; color: #fff; border-color: #555; }
+        
+        .domain-group { margin-bottom: 20px; border: 1px solid #222; border-radius: 8px; overflow: hidden; background: #0f0f0f; }
+        .domain-header { background: #1a1a1a; padding: 10px; display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: bold; border-bottom: 1px solid #222; }
+        .copy-btn { background: #333; color: #fff; border: 1px solid #444; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: 0.2s; }
+        .copy-btn:hover { background: #444; }
+        .log-entry { padding: 8px 10px; border-top: 1px solid #222; font-family: monospace; font-size: 11px; color: #ff5252; word-wrap: break-word; }
+        
+        .history-item { padding: 10px; border-bottom: 1px solid #222; font-size: 13px; color: #aaa; word-break: break-all; }
+        .history-item strong { color: #fff; }
+    </style>
+</head>
+<body>
+
+    <div class="tab-bar" id="tabBar"></div>
+
+    <div class="topbar">
+        <button class="icon-btn" id="newTabBtn" title="New Tab">+</button>
+        <button class="icon-btn" id="fullScreenBtn" title="Fullscreen">⛶</button>
+        <input type="text" class="omnibox" id="urlInput" placeholder="Search or type URL..." autocomplete="off">
+        <button class="icon-btn" id="toggleSidebarBtn" title="Menu">⋮</button>
+    </div>
+
+    <div class="browser-container" id="browserContainer"></div>
+
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2 id="sidebarTitle">Menu</h2>
+            <button class="close-btn" id="closeSidebarBtn">×</button>
+        </div>
+        
+        <div class="sidebar-content" id="mainMenu">
+            <div class="menu-item" id="btnReload">
+                <span>🗘</span> <div>Reload Current Tab</div>
+            </div>
+            <div class="menu-item" id="btnHistory">
+                <span>☰</span> <div>Session History</div>
+            </div>
+            <div class="menu-item" id="btnErrors">
+                <span>&lt;/&gt;</span> <div>Smart Error Logs</div>
+            </div>
+        </div>
+
+        <div class="sidebar-content error-panel" id="historyPanel">
+            <button class="filter-btn" id="backToMenu1" style="margin-bottom: 15px; width: 100%;">← Back to Menu</button>
+            <div id="historyList"></div>
+        </div>
+
+        <div class="sidebar-content error-panel" id="errorPanel">
+            <button class="filter-btn" id="backToMenu2" style="margin-bottom: 15px; width: 100%;">← Back to Menu</button>
+            <div class="filter-tabs">
+                <button class="filter-btn active" id="filterCurrent">Current Tab</button>
+                <button class="filter-btn" id="filterAll">All Tabs</button>
+            </div>
+            <div id="errorList"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. DYNAMIC AUTHENTICATION ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const AUTH_PW = urlParams.get('pw') || '';
+
+        // --- 2. THE NATIVE BASE HOME PAGE (WITH DRAG & DROP ENGINE) ---
+        const homeHTML = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { background: #000; color: #fff; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; transition: background 0.3s; }
+                    body.dragover { background: #111; border: 2px dashed #444; }
+                    h1 { font-size: 4rem; letter-spacing: -2px; margin-bottom: 30px; font-weight: 900; pointer-events: none; }
+                    form { width: 100%; max-width: 600px; padding: 0 20px; box-sizing: border-box; position: relative; z-index: 10; }
+                    input { width: 100%; padding: 16px 24px; border-radius: 30px; border: 1px solid #333; background: #111; color: #fff; font-size: 16px; outline: none; box-sizing: border-box; transition: 0.2s; }
+                    input:focus { border-color: #555; background: #1a1a1a; }
+                    .drag-text { margin-top: 30px; color: #555; font-size: 14px; pointer-events: none; }
+                </style>
+            </head>
+            <body id="dropzone">
+                <h1>Base</h1>
+                <form id="hForm">
+                    <input type="text" id="s" placeholder="Search the web or enter URL..." autocomplete="off" autofocus>
+                </form>
+                <div class="drag-text">Drag & Drop Single-File HTML Games Here</div>
+
+                <script>
+                    // Search Routing
+                    document.getElementById('hForm').addEventListener('submit', function(e) {
+                        e.preventDefault();
+                        window.parent.postMessage({ type: 'base_search', query: document.getElementById('s').value }, '*');
+                    });
+
+                    // Drag and Drop Engine
+                    const dropzone = document.getElementById('dropzone');
+                    
+                    dropzone.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        dropzone.classList.add('dragover');
+                    });
+
+                    dropzone.addEventListener('dragleave', () => {
+                        dropzone.classList.remove('dragover');
+                    });
+
+                    dropzone.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        dropzone.classList.remove('dragover');
+                        
+                        const file = e.dataTransfer.files[0];
+                        if (file && file.name.endsWith('.html')) {
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                // Send the raw HTML content to the parent proxy shell
+                                window.parent.postMessage({ 
+                                    type: 'base_local_html', 
+                                    filename: file.name, 
+                                    content: event.target.result 
+                                }, '*');
+                            };
+                            reader.readAsText(file);
+                        }
+                    });
+                <\/script>
+            </body>
+            </html>
+        `;
+
+        // --- 3. DATA STATE ---
+        const state = {
+            history: [], errors: {}, tabs: {}, activeTabId: null, tabCounter: 0
+        };
+
+        const elements = {
+            sidebar: document.getElementById('sidebar'), input: document.getElementById('urlInput'),
+            tabBar: document.getElementById('tabBar'), container: document.getElementById('browserContainer')
+        };
+
+        const extractDomain = (urlStr) => {
+            try {
+                const targetB64 = new URLSearchParams(new URL(urlStr).search).get('target');
+                return targetB64 ? new URL(atob(decodeURIComponent(targetB64))).hostname : "Base Home";
+            } catch (e) { return "Base Search"; }
+        };
+
+        // --- 4. CORE ROUTING ENGINE ---
+        const executeSearch = (query) => {
+            const encoded = encodeURIComponent(btoa(query));
+            const fullUrl = `/?pw=${AUTH_PW}&target=${encoded}`;
+            const domain = extractDomain(fullUrl);
+            
+            const activeIframe = document.getElementById(`iframe_${state.activeTabId}`);
+            activeIframe.removeAttribute('srcdoc'); 
+            activeIframe.src = fullUrl;
+            
+            state.tabs[state.activeTabId].domain = domain;
+            document.querySelector(`#ui_${state.activeTabId} .tab-title`).innerText = domain;
+            elements.input.value = query;
+            
+            state.history.push({ domain: domain, query: query, time: new Date().toLocaleTimeString() });
+        };
+
+        // --- 5. TAB SYSTEM LOGIC ---
+        const createTab = () => {
+            const tabId = 'tab_' + (++state.tabCounter);
+            state.tabs[tabId] = { id: tabId, domain: "Base Home" };
+
+            // Tab UI
+            const tabEl = document.createElement('div');
+            tabEl.className = 'tab'; tabEl.id = `ui_${tabId}`;
+            tabEl.innerHTML = `<span class="tab-title">Base Home</span><button class="tab-close" onclick="closeTab('${tabId}', event)">×</button>`;
+            tabEl.onclick = () => switchTab(tabId);
+            elements.tabBar.appendChild(tabEl);
+
+            // Iframe
+            const iframe = document.createElement('iframe');
+            iframe.className = 'browser-frame'; iframe.id = `iframe_${tabId}`;
+            iframe.srcdoc = homeHTML; 
+            elements.container.appendChild(iframe);
+
+            switchTab(tabId);
+        };
+
+        window.switchTab = (tabId) => {
+            if (!state.tabs[tabId]) return;
+            state.activeTabId = tabId;
+
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.browser-frame').forEach(f => f.classList.remove('active'));
+            
+            document.getElementById(`ui_${tabId}`).classList.add('active');
+            document.getElementById(`iframe_${tabId}`).classList.add('active');
+
+            const iframe = document.getElementById(`iframe_${tabId}`);
+            
+            // UI Address Bar Logic based on tab type
+            if (state.tabs[tabId].isLocal) {
+                elements.input.value = `file://${state.tabs[tabId].domain}`;
+            } else if (iframe.hasAttribute('srcdoc') && !state.tabs[tabId].isLocal)
