@@ -3,101 +3,154 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BaseGames</title>
+    <title>BaseGames Library</title>
     <style>
-        /* --- PURE DARK MODE --- */
-        body { margin: 0; padding: 0; background: #000; color: #e0e0e0; font-family: sans-serif; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
-        
-        /* --- DROPZONE UI --- */
-        #dropzone {
-            border: 2px dashed #333; border-radius: 16px; padding: 60px 40px; text-align: center;
-            cursor: pointer; transition: all 0.2s ease; background: #0a0a0a; width: 80%; max-width: 500px;
-        }
-        #dropzone:hover, #dropzone.dragover { border-color: #888; background: #151515; transform: scale(1.02); }
-        #dropzone h2 { margin: 0; font-size: 20px; font-weight: 500; color: #bbb; pointer-events: none; }
-        #fileInput { display: none; }
+        /* --- CORE STYLES --- */
+        body { margin: 0; padding: 0; background: #000; color: #fff; font-family: sans-serif; overflow-x: hidden; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #050505; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
 
-        /* --- GAME FRAME --- */
-        #gameFrame { display: none; width: 100vw; height: 100vh; border: none; position: absolute; top: 0; left: 0; z-index: 10; background: #000; }
+        /* --- HEADER & SEARCH --- */
+        header { padding: 30px 40px 10px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { margin: 0; font-size: 28px; font-weight: 900; letter-spacing: -1px; }
+        .search-container { position: relative; width: 300px; }
+        .search-bar { width: 100%; padding: 12px 20px; border-radius: 20px; background: #111; border: 1px solid #333; color: #fff; outline: none; box-sizing: border-box; transition: 0.2s; }
+        .search-bar:focus { border-color: #666; background: #1a1a1a; }
+
+        /* --- SECTION TITLES --- */
+        .section-title { padding: 0 40px; margin: 30px 0 15px; font-size: 18px; color: #aaa; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+
+        /* --- CAROUSEL (FEATURED) --- */
+        .carousel { display: flex; gap: 20px; padding: 0 40px 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; }
+        .game-card { flex: 0 0 auto; width: 280px; background: #111; border-radius: 12px; overflow: hidden; cursor: pointer; border: 1px solid #222; transition: transform 0.2s, border-color 0.2s; scroll-snap-align: start; }
+        .game-card:hover { transform: translateY(-5px); border-color: #555; }
+        .game-card img { width: 100%; height: 160px; object-fit: cover; border-bottom: 1px solid #222; }
+        .game-card .info { padding: 15px; }
+        .game-card h3 { margin: 0; font-size: 16px; color: #eee; }
+
+        /* --- FULL GAME GRID --- */
+        .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; padding: 0 40px 60px; }
+        .grid-card { width: 100%; background: #0a0a0a; border-radius: 10px; overflow: hidden; cursor: pointer; border: 1px solid #1a1a1a; transition: 0.2s; }
+        .grid-card:hover { transform: scale(1.03); border-color: #444; background: #111; }
+        .grid-card img { width: 100%; height: 120px; object-fit: cover; }
+        .grid-card .info { padding: 12px; text-align: center; }
+        .grid-card h3 { margin: 0; font-size: 14px; color: #ccc; }
+
+        /* --- GAME PLAYER OVERLAY --- */
+        #playerOverlay { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 9999; }
+        #gameFrame { width: 100%; height: 100%; border: none; }
+        #closeBtn { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid #444; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; backdrop-filter: blur(5px); transition: 0.2s; }
+        #closeBtn:hover { background: rgba(20,20,20,0.9); border-color: #ff6b6b; color: #ff6b6b; }
         
-        /* --- EXIT BUTTON --- */
-        #closeBtn {
-            display: none; position: absolute; top: 15px; right: 15px; z-index: 20;
-            background: rgba(10, 10, 10, 0.7); color: #ccc; border: 1px solid #333;
-            padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
-            backdrop-filter: blur(5px); transition: 0.2s;
-        }
-        #closeBtn:hover { background: rgba(20, 20, 20, 0.9); color: #ff6b6b; border-color: #ff6b6b; }
+        /* --- NO RESULTS --- */
+        #noResults { display: none; text-align: center; color: #666; padding: 40px; grid-column: 1 / -1; }
     </style>
 </head>
 <body>
 
-    <div id="dropzone">
-        <h2>Drag or click here to open a HTML file.</h2>
-    </div>
-    <input type="file" id="fileInput" accept=".html">
+    <script src="gamedata.js"></script>
 
-    <iframe id="gameFrame"></iframe>
-    <button id="closeBtn">Exit Game</button>
+    <header>
+        <h1>BaseGames</h1>
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-bar" placeholder="Search games...">
+        </div>
+    </header>
+
+    <div id="featuredSection">
+        <div class="section-title">Featured</div>
+        <div class="carousel" id="carouselContainer"></div>
+    </div>
+
+    <div class="section-title">All Games</div>
+    <div class="game-grid" id="gridContainer">
+        <div id="noResults">No games found.</div>
+    </div>
+
+    <div id="playerOverlay">
+        <iframe id="gameFrame" allowfullscreen></iframe>
+        <button id="closeBtn">Exit Game</button>
+    </div>
 
     <script>
-        const dropzone = document.getElementById('dropzone');
-        const fileInput = document.getElementById('fileInput');
+        const carouselContainer = document.getElementById('carouselContainer');
+        const gridContainer = document.getElementById('gridContainer');
+        const searchInput = document.getElementById('searchInput');
+        const playerOverlay = document.getElementById('playerOverlay');
         const gameFrame = document.getElementById('gameFrame');
         const closeBtn = document.getElementById('closeBtn');
+        const featuredSection = document.getElementById('featuredSection');
+        const noResults = document.getElementById('noResults');
 
-        // --- 1. FILE HANDLING LOGIC ---
-        const loadGame = (file) => {
-            if (!file || !file.name.endsWith('.html')) {
-                alert('Please select a valid .html file!');
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                // Hide Dropzone, Show Game
-                dropzone.style.display = 'none';
-                gameFrame.style.display = 'block';
-                closeBtn.style.display = 'block';
-                
-                // Inject HTML into iframe
-                gameFrame.srcdoc = event.target.result;
-            };
-            reader.readAsText(file);
+        // --- 1. RENDER LOGIC ---
+        const createCard = (game, isCarousel) => {
+            const card = document.createElement('div');
+            card.className = isCarousel ? 'game-card' : 'grid-card';
+            card.innerHTML = `
+                <img src="${game.image}" alt="${game.title}" loading="lazy">
+                <div class="info">
+                    <h3>${game.title}</h3>
+                </div>
+            `;
+            // Open game on click
+            card.addEventListener('click', () => {
+                playerOverlay.style.display = 'block';
+                gameFrame.src = game.url;
+            });
+            return card;
         };
 
-        // --- 2. CLICK TO UPLOAD ---
-        dropzone.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => loadGame(e.target.files[0]));
+        const renderGames = (filterText = '') => {
+            carouselContainer.innerHTML = '';
+            gridContainer.innerHTML = '';
+            gridContainer.appendChild(noResults); // Keep no results message in DOM
+            
+            let hasResults = false;
+            const term = filterText.toLowerCase();
 
-        // --- 3. DRAG AND DROP ---
-        dropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropzone.classList.add('dragover');
+            gamesLibrary.forEach(game => {
+                if (game.title.toLowerCase().includes(term)) {
+                    hasResults = true;
+                    
+                    // If searching, put everything in the grid for easier viewing.
+                    // If not searching, split them between carousel and grid.
+                    if (filterText === '') {
+                        if (game.featured) {
+                            carouselContainer.appendChild(createCard(game, true));
+                        } else {
+                            gridContainer.appendChild(createCard(game, false));
+                        }
+                    } else {
+                        gridContainer.appendChild(createCard(game, false));
+                    }
+                }
+            });
+
+            // Toggle UI based on search state
+            if (filterText !== '') {
+                featuredSection.style.display = 'none';
+            } else {
+                featuredSection.style.display = 'block';
+            }
+
+            noResults.style.display = hasResults ? 'none' : 'block';
+        };
+
+        // --- 2. SEARCH EVENT ---
+        searchInput.addEventListener('input', (e) => {
+            renderGames(e.target.value);
         });
 
-        dropzone.addEventListener('dragleave', () => {
-            dropzone.classList.remove('dragover');
-        });
-
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropzone.classList.remove('dragover');
-            loadGame(e.dataTransfer.files[0]);
-        });
-
-        // --- 4. GLOBAL DRAG PREVENTION (Keeps browser from accidentally opening the file natively if missed) ---
-        window.addEventListener('dragover', (e) => e.preventDefault());
-        window.addEventListener('drop', (e) => e.preventDefault());
-
-        // --- 5. EXIT GAME ---
+        // --- 3. EXIT GAME ---
         closeBtn.addEventListener('click', () => {
-            gameFrame.srcdoc = ''; // Clear memory
-            gameFrame.style.display = 'none';
-            closeBtn.style.display = 'none';
-            dropzone.style.display = 'block';
-            fileInput.value = ''; // Reset file input
+            playerOverlay.style.display = 'none';
+            gameFrame.src = ''; // Cut audio/memory
         });
+
+        // Initial Load
+        renderGames();
     </script>
 </body>
 </html>
